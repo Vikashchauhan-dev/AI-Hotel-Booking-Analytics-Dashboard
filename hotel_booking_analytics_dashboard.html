@@ -1,0 +1,691 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Executive Hotel Analytics</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+        :root {
+            --bg-base: #f1f5f9;
+            --bg-panel: #ffffff;
+            --text-main: #0f172a;
+            --text-muted: #64748b;
+            --border-color: #e2e8f0;
+            --accent-blue: #2563eb;
+            --panel-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+
+        .dark {
+            --bg-base: #0b1120;
+            --bg-panel: #1e293b;
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+            --border-color: #334155;
+            --accent-blue: #3b82f6;
+            --panel-shadow: 0 4px 6px -1px rgba(0,0,0,0.3);
+        }
+
+        body {
+            background-color: var(--bg-base);
+            color: var(--text-main);
+            font-family: 'Inter', sans-serif;
+            margin: 0;
+            padding: 0;
+            height: 100vh;
+            width: 100vw;
+            overflow: hidden; /* Strict one screen */
+            display: flex;
+            flex-direction: column;
+            transition: all 0.2s ease;
+        }
+
+        /* Glassmorphism panel styling */
+        .panel {
+            background-color: var(--bg-panel);
+            border: 1px solid var(--border-color);
+            border-radius: 0.5rem;
+            box-shadow: var(--panel-shadow);
+            display: flex;
+            flex-direction: column;
+            position: relative;
+        }
+
+        /* Chart container requires min-height 0 to prevent flex blowout */
+        .chart-wrapper {
+            position: relative;
+            flex: 1 1 auto;
+            min-height: 0;
+            width: 100%;
+        }
+
+        /* Custom Scrollbar for side panel */
+        ::-webkit-scrollbar { width: 4px; height: 4px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: var(--border-color); border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
+
+        select, input[type="range"] {
+            background-color: var(--bg-base);
+            color: var(--text-main);
+            border: 1px solid var(--border-color);
+        }
+        
+        /* Interactive Loading Overlay */
+        #loadingOverlay {
+            position: absolute;
+            inset: 0;
+            background: rgba(var(--bg-panel), 0.7);
+            backdrop-filter: blur(2px);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 50;
+            border-radius: inherit;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.2s;
+        }
+        #loadingOverlay.active {
+            opacity: 1;
+            pointer-events: all;
+        }
+
+        /* Range Slider Styling */
+        input[type=range] {
+            -webkit-appearance: none;
+            width: 100%;
+            background: transparent;
+        }
+        input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            height: 12px; width: 12px;
+            border-radius: 50%;
+            background: var(--accent-blue);
+            cursor: pointer;
+            margin-top: -4px;
+        }
+        input[type=range]::-webkit-slider-runnable-track {
+            width: 100%; height: 4px;
+            cursor: pointer;
+            background: var(--border-color);
+            border-radius: 2px;
+        }
+    </style>
+</head>
+<body class="text-xs antialiased">
+
+    <!-- Top Header Bar (Fixed Height) -->
+    <header class="h-12 px-4 flex items-center justify-between shrink-0 border-b border-[var(--border-color)] bg-[var(--bg-panel)] z-10">
+        <div class="flex items-center gap-3">
+            <div class="h-8 w-8 rounded bg-blue-600 flex items-center justify-center text-white shadow-lg shadow-blue-500/20">
+                <i class="fa-solid fa-hotel"></i>
+            </div>
+            <div>
+                <h1 class="font-bold text-sm tracking-tight">Hotel Booking Analytics</h1>
+                <p class="text-[9px] text-[var(--text-muted)] uppercase tracking-wider">Executive Performance Overview</p>
+            </div>
+        </div>
+        
+        <!-- Timeline Filter -->
+        <div class="flex-1 max-w-xl mx-8 flex items-center gap-3">
+            <span class="text-[10px] text-[var(--text-muted)] font-medium">Timeline:</span>
+            <span class="text-[10px] font-mono">Jan 2015</span>
+            <input type="range" min="1" max="100" value="100" class="flex-1 filter-trigger" id="timelineSlider">
+            <span class="text-[10px] font-mono">Dec 2017</span>
+        </div>
+
+        <div class="flex items-center gap-3">
+            <div class="flex items-center gap-2 px-2 py-1 rounded bg-[var(--bg-base)] border border-[var(--border-color)]">
+                <div class="h-2 w-2 rounded-full bg-green-500 animate-pulse"></div>
+                <span class="text-[10px] font-medium">Live Data</span>
+            </div>
+            <button id="themeToggle" class="h-8 w-8 rounded flex items-center justify-center hover:bg-[var(--bg-base)] transition text-[var(--text-muted)]">
+                <i class="fa-solid fa-sun" id="themeIcon"></i>
+            </button>
+        </div>
+    </header>
+
+    <!-- Main Dashboard Container -->
+    <div class="flex flex-1 h-[calc(100vh-3rem)] overflow-hidden">
+        
+        <!-- Sidebar: Slicers & Funnel -->
+        <aside class="w-56 p-2 flex flex-col gap-2 shrink-0 border-r border-[var(--border-color)] bg-[var(--bg-panel)] overflow-y-auto">
+            
+            <!-- Slicers -->
+            <div class="flex flex-col gap-2">
+                <div class="flex items-center gap-1.5 text-[11px] font-bold text-[var(--text-muted)] uppercase tracking-wider pl-1 pt-1">
+                    <i class="fa-solid fa-filter"></i> Global Filters
+                </div>
+                
+                <div class="flex flex-col gap-1.5">
+                    <select class="filter-trigger w-full rounded p-1.5 text-[11px] focus:ring-1 focus:ring-blue-500 outline-none">
+                        <option value="all">All Hotel Types</option>
+                        <option value="resort">Resort Hotel</option>
+                        <option value="city">City Hotel</option>
+                    </select>
+                    
+                    <select class="filter-trigger w-full rounded p-1.5 text-[11px] focus:ring-1 focus:ring-blue-500 outline-none">
+                        <option value="all">All Market Segments</option>
+                        <option value="ota">Online TA</option>
+                        <option value="offline">Offline TA/TO</option>
+                        <option value="direct">Direct</option>
+                        <option value="corporate">Corporate</option>
+                    </select>
+
+                    <select class="filter-trigger w-full rounded p-1.5 text-[11px] focus:ring-1 focus:ring-blue-500 outline-none">
+                        <option value="all">All Customer Types</option>
+                        <option value="transient">Transient</option>
+                        <option value="transient-party">Transient-Party</option>
+                        <option value="contract">Contract</option>
+                        <option value="group">Group</option>
+                    </select>
+                </div>
+                
+                <button id="resetFilters" class="mt-1 w-full py-1.5 rounded bg-[var(--bg-base)] hover:bg-[var(--border-color)] transition text-[10px] font-semibold text-[var(--text-main)] border border-[var(--border-color)]">
+                    <i class="fa-solid fa-rotate-left mr-1"></i> Reset View
+                </button>
+            </div>
+
+            <!-- Divider -->
+            <div class="h-px bg-[var(--border-color)] my-1"></div>
+
+            <!-- Conversion Funnel -->
+            <div class="flex-1 flex flex-col min-h-0">
+                <div class="text-[11px] font-bold text-[var(--text-muted)] uppercase tracking-wider pl-1 mb-2">
+                    Conversion Funnel
+                </div>
+                <div class="flex-1 flex flex-col justify-around px-1 relative">
+                    <!-- Lines connecting funnel -->
+                    <div class="absolute left-1/2 top-4 bottom-4 w-px bg-[var(--border-color)] -z-10"></div>
+                    
+                    <div class="relative group">
+                        <div class="flex justify-between text-[10px] mb-0.5"><span class="font-medium text-[var(--text-main)]">Total Enquiries</span><span class="font-bold text-blue-500" data-kpi="funnel-1">119,390</span></div>
+                        <div class="w-full h-4 bg-[var(--bg-base)] rounded overflow-hidden border border-[var(--border-color)]">
+                            <div class="h-full bg-blue-500/80 transition-all duration-700 w-full relative"></div>
+                        </div>
+                    </div>
+                    
+                    <div class="relative group">
+                        <div class="flex justify-between text-[10px] mb-0.5"><span class="font-medium text-[var(--text-main)]">Confirmed Bookings</span><span class="font-bold text-indigo-500" data-kpi="funnel-2">75,166</span></div>
+                        <div class="w-full h-4 bg-[var(--bg-base)] rounded overflow-hidden border border-[var(--border-color)] flex justify-center">
+                            <div class="h-full bg-indigo-500/80 transition-all duration-700 w-[63%] rounded-sm" id="funnelBar2"></div>
+                        </div>
+                    </div>
+
+                    <div class="relative group">
+                        <div class="flex justify-between text-[10px] mb-0.5"><span class="font-medium text-[var(--text-main)]">Actual Check-ins</span><span class="font-bold text-green-500" data-kpi="funnel-3">74,389</span></div>
+                        <div class="w-full h-4 bg-[var(--bg-base)] rounded overflow-hidden border border-[var(--border-color)] flex justify-center">
+                            <div class="h-full bg-green-500/80 transition-all duration-700 w-[62%] rounded-sm" id="funnelBar3"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Executive Insights -->
+            <div class="panel p-2 bg-[var(--bg-base)] border-none mt-auto">
+                <div class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1">AI Insights</div>
+                <ul class="text-[9px] space-y-1.5 text-[var(--text-main)]">
+                    <li class="flex items-start gap-1.5"><i class="fa-solid fa-caret-up text-green-500 mt-0.5"></i> <span id="insight1">Online TA drives 47% of volume.</span></li>
+                    <li class="flex items-start gap-1.5"><i class="fa-solid fa-caret-down text-red-500 mt-0.5"></i> <span id="insight2">City Hotels face 41% cancel rate.</span></li>
+                    <li class="flex items-start gap-1.5"><i class="fa-solid fa-circle-info text-blue-500 mt-0.5"></i> <span id="insight3">Avg lead time peaks in August.</span></li>
+                </ul>
+            </div>
+        </aside>
+
+        <!-- Main Content Area (Strict Flex, No Scroll) -->
+        <main class="flex-1 flex flex-col p-2 gap-2 overflow-hidden bg-[var(--bg-base)] relative">
+            
+            <!-- Loading Overlay for Interactions -->
+            <div id="loadingOverlay">
+                <div class="animate-spin text-blue-500 text-3xl"><i class="fa-solid fa-circle-notch"></i></div>
+            </div>
+
+            <!-- KPI Row (Fixed Height) -->
+            <div class="h-16 flex gap-2 shrink-0">
+                <!-- KPI 1 -->
+                <div class="panel flex-1 p-2 flex justify-between items-center group hover:border-blue-500/50 transition">
+                    <div>
+                        <p class="text-[10px] font-semibold text-[var(--text-muted)] uppercase tracking-wider mb-0.5">Total Bookings</p>
+                        <div class="flex items-baseline gap-2">
+                            <h2 class="text-xl font-bold text-[var(--text-main)]" data-kpi="total">119,390</h2>
+                            <span class="text-[9px] text-green-500 font-medium flex items-center"><i class="fa-solid fa-arrow-up mr-0.5"></i> 5.2%</span>
+                        </div>
+                    </div>
+                    <div class="h-8 w-8 rounded-full bg-blue-500/10 text-blue-500 flex items-center justify-center text-sm group-hover:scale-110 transition"><i class="fa-solid fa-book"></i></div>
+                </div>
+                <!-- KPI 2 -->
+                <div class="panel flex-1 p-2 flex justify-between items-center group hover:border-red-500/50 transition">
+                    <div>
+                        <p class="text-[10px] font-semibold text-[var(--text-muted)] uppercase tracking-wider mb-0.5">Cancel Rate</p>
+                        <div class="flex items-baseline gap-2">
+                            <h2 class="text-xl font-bold text-[var(--text-main)]" data-kpi="cancel">37.0%</h2>
+                            <span class="text-[9px] text-red-500 font-medium flex items-center"><i class="fa-solid fa-arrow-up mr-0.5"></i> 1.1%</span>
+                        </div>
+                    </div>
+                    <div class="h-8 w-8 rounded-full bg-red-500/10 text-red-500 flex items-center justify-center text-sm group-hover:scale-110 transition"><i class="fa-solid fa-ban"></i></div>
+                </div>
+                <!-- KPI 3 -->
+                <div class="panel flex-1 p-2 flex justify-between items-center group hover:border-emerald-500/50 transition">
+                    <div>
+                        <p class="text-[10px] font-semibold text-[var(--text-muted)] uppercase tracking-wider mb-0.5">Revenue Est.</p>
+                        <div class="flex items-baseline gap-2">
+                            <h2 class="text-xl font-bold text-[var(--text-main)]" data-kpi="rev">$12.4M</h2>
+                            <span class="text-[9px] text-green-500 font-medium flex items-center"><i class="fa-solid fa-arrow-up mr-0.5"></i> 8.4%</span>
+                        </div>
+                    </div>
+                    <div class="h-8 w-8 rounded-full bg-emerald-500/10 text-emerald-500 flex items-center justify-center text-sm group-hover:scale-110 transition"><i class="fa-solid fa-dollar-sign"></i></div>
+                </div>
+                <!-- KPI 4 -->
+                <div class="panel flex-1 p-2 flex justify-between items-center group hover:border-amber-500/50 transition">
+                    <div>
+                        <p class="text-[10px] font-semibold text-[var(--text-muted)] uppercase tracking-wider mb-0.5">Avg Daily Rate</p>
+                        <div class="flex items-baseline gap-2">
+                            <h2 class="text-xl font-bold text-[var(--text-main)]" data-kpi="adr">$101.8</h2>
+                            <span class="text-[9px] text-green-500 font-medium flex items-center"><i class="fa-solid fa-arrow-up mr-0.5"></i> 2.1%</span>
+                        </div>
+                    </div>
+                    <div class="h-8 w-8 rounded-full bg-amber-500/10 text-amber-500 flex items-center justify-center text-sm group-hover:scale-110 transition"><i class="fa-solid fa-tags"></i></div>
+                </div>
+                <!-- KPI 5 -->
+                <div class="panel flex-1 p-2 flex justify-between items-center group hover:border-purple-500/50 transition">
+                    <div>
+                        <p class="text-[10px] font-semibold text-[var(--text-muted)] uppercase tracking-wider mb-0.5">Avg Lead Time</p>
+                        <div class="flex items-baseline gap-2">
+                            <h2 class="text-xl font-bold text-[var(--text-main)]" data-kpi="lead">104d</h2>
+                            <span class="text-[9px] text-[var(--text-muted)] font-medium flex items-center"><i class="fa-solid fa-minus mr-0.5"></i> 0.0%</span>
+                        </div>
+                    </div>
+                    <div class="h-8 w-8 rounded-full bg-purple-500/10 text-purple-500 flex items-center justify-center text-sm group-hover:scale-110 transition"><i class="fa-solid fa-calendar-day"></i></div>
+                </div>
+                <!-- KPI 6 -->
+                <div class="panel flex-1 p-2 flex justify-between items-center group hover:border-indigo-500/50 transition">
+                    <div>
+                        <p class="text-[10px] font-semibold text-[var(--text-muted)] uppercase tracking-wider mb-0.5">Avg Stay</p>
+                        <div class="flex items-baseline gap-2">
+                            <h2 class="text-xl font-bold text-[var(--text-main)]" data-kpi="stay">3.4n</h2>
+                            <span class="text-[9px] text-[var(--text-muted)] font-medium flex items-center">Wknd 0.9n</span>
+                        </div>
+                    </div>
+                    <div class="h-8 w-8 rounded-full bg-indigo-500/10 text-indigo-500 flex items-center justify-center text-sm group-hover:scale-110 transition"><i class="fa-solid fa-bed"></i></div>
+                </div>
+            </div>
+
+            <!-- Charts Grid (Fills remaining height) -->
+            <div class="flex-1 grid grid-cols-4 grid-rows-2 gap-2 min-h-0 pb-1">
+                
+                <!-- Row 1 -->
+                <div class="panel col-span-2 p-2 flex flex-col">
+                    <div class="flex justify-between items-center mb-1">
+                        <h3 class="text-[11px] font-bold text-[var(--text-main)]">Booking Seasonality & Trends</h3>
+                        <div class="flex gap-2">
+                            <span class="flex items-center text-[9px] text-[var(--text-muted)]"><div class="w-2 h-2 rounded bg-blue-500 mr-1"></div> Current Year</span>
+                            <span class="flex items-center text-[9px] text-[var(--text-muted)]"><div class="w-2 h-2 rounded bg-[var(--border-color)] mr-1"></div> Prev Year</span>
+                        </div>
+                    </div>
+                    <div class="chart-wrapper"><canvas id="chartTrend"></canvas></div>
+                </div>
+                
+                <div class="panel p-2 flex flex-col">
+                    <h3 class="text-[11px] font-bold text-[var(--text-main)] mb-1">Hotel Type Distribution</h3>
+                    <div class="chart-wrapper flex items-center justify-center"><canvas id="chartHotelType"></canvas></div>
+                </div>
+
+                <div class="panel p-2 flex flex-col">
+                    <h3 class="text-[11px] font-bold text-[var(--text-main)] mb-1">Status by Month</h3>
+                    <div class="chart-wrapper"><canvas id="chartStatus"></canvas></div>
+                </div>
+
+                <!-- Row 2 -->
+                <div class="panel p-2 flex flex-col">
+                    <h3 class="text-[11px] font-bold text-[var(--text-main)] mb-1">Market Segment Source</h3>
+                    <div class="chart-wrapper"><canvas id="chartMarket"></canvas></div>
+                </div>
+
+                <div class="panel p-2 flex flex-col">
+                    <h3 class="text-[11px] font-bold text-[var(--text-main)] mb-1">Top Origin Countries</h3>
+                    <div class="chart-wrapper"><canvas id="chartCountry"></canvas></div>
+                </div>
+
+                <div class="panel p-2 flex flex-col">
+                    <h3 class="text-[11px] font-bold text-[var(--text-main)] mb-1">Customer Segmentation</h3>
+                    <div class="chart-wrapper flex items-center justify-center"><canvas id="chartCustomer"></canvas></div>
+                </div>
+
+                <div class="panel p-2 flex flex-col">
+                    <h3 class="text-[11px] font-bold text-[var(--text-main)] mb-1">Deposit Payment Analysis</h3>
+                    <div class="chart-wrapper"><canvas id="chartDeposit"></canvas></div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script>
+        // === Theming Logic ===
+        const html = document.documentElement;
+        const themeBtn = document.getElementById('themeToggle');
+        const themeIcon = document.getElementById('themeIcon');
+        
+        function updateThemeIcon() {
+            if (html.classList.contains('dark')) {
+                themeIcon.classList.replace('fa-moon', 'fa-sun');
+            } else {
+                themeIcon.classList.replace('fa-sun', 'fa-moon');
+            }
+        }
+        
+        themeBtn.addEventListener('click', () => {
+            html.classList.toggle('dark');
+            updateThemeIcon();
+            updateChartColors();
+        });
+        updateThemeIcon();
+
+        // === Chart.js Global Config for Dense Dashboard ===
+        Chart.defaults.font.family = "'Inter', sans-serif";
+        Chart.defaults.font.size = 9;
+        Chart.defaults.maintainAspectRatio = false;
+        Chart.defaults.plugins.tooltip.backgroundColor = 'rgba(15, 23, 42, 0.9)';
+        Chart.defaults.plugins.tooltip.padding = 8;
+        Chart.defaults.plugins.tooltip.cornerRadius = 4;
+        Chart.defaults.plugins.legend.display = false; // Hide most legends to save space
+
+        function getColors() {
+            const isDark = html.classList.contains('dark');
+            return {
+                text: isDark ? '#94a3b8' : '#64748b',
+                grid: isDark ? '#334155' : '#e2e8f0',
+                lineBase: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)'
+            };
+        }
+
+        const commonScales = () => {
+            const c = getColors();
+            return {
+                x: { ticks: { color: c.text, maxRotation: 0 }, grid: { display: false }, border: { display: false } },
+                y: { ticks: { color: c.text, maxTicksLimit: 5 }, grid: { color: c.grid, borderDash: [2, 4] }, border: { display: false }, beginAtZero: true }
+            };
+        };
+
+        // === Chart Initializations ===
+        let charts = {};
+
+        function initCharts() {
+            const c = getColors();
+            
+            // 1. Monthly Trend (Line)
+            charts.trend = new Chart(document.getElementById('chartTrend'), {
+                type: 'line',
+                data: {
+                    labels: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'],
+                    datasets: [
+                        { label: 'Current Year', data: [5929, 8068, 9794, 11089, 11791, 10939, 12661, 13877, 10508, 11160, 6794, 6780], borderColor: '#3b82f6', backgroundColor: 'rgba(59, 130, 246, 0.1)', borderWidth: 2, tension: 0.4, fill: true, pointRadius: 0, pointHoverRadius: 4 },
+                        { label: 'Previous Year', data: [4200, 6100, 8000, 9500, 10200, 9800, 11000, 12100, 9200, 10000, 5800, 5500], borderColor: c.lineBase, borderDash: [4, 4], borderWidth: 2, tension: 0.4, pointRadius: 0 }
+                    ]
+                },
+                options: {
+                    scales: commonScales(),
+                    interaction: { mode: 'index', intersect: false }
+                }
+            });
+
+            // 2. Hotel Type (Doughnut)
+            charts.hotel = new Chart(document.getElementById('chartHotelType'), {
+                type: 'doughnut',
+                data: {
+                    labels: ['City Hotel', 'Resort Hotel'],
+                    datasets: [{ data: [66, 34], backgroundColor: ['#3b82f6', '#10b981'], borderWidth: 0, cutout: '75%' }]
+                },
+                options: {
+                    plugins: {
+                        legend: { display: true, position: 'right', labels: { color: c.text, boxWidth: 8, font: { size: 9 } } },
+                        tooltip: { callbacks: { label: (ctx) => ` ${ctx.label}: ${ctx.raw}%` } }
+                    }
+                }
+            });
+
+            // 3. Status by Month (Stacked Bar)
+            charts.status = new Chart(document.getElementById('chartStatus'), {
+                type: 'bar',
+                data: {
+                    labels: ['Jan', 'Mar', 'May', 'Jul', 'Sep', 'Nov'],
+                    datasets: [
+                        { label: 'Confirmed', data: [4122, 6645, 7114, 7919, 6392, 4672], backgroundColor: '#10b981', borderRadius: 2, stack: 'Stack 0' },
+                        { label: 'Canceled', data: [1807, 3149, 4677, 4742, 4116, 2122], backgroundColor: '#ef4444', borderRadius: 2, stack: 'Stack 0' }
+                    ]
+                },
+                options: { scales: commonScales() }
+            });
+
+            // 4. Market Segment (Horizontal Bar)
+            charts.market = new Chart(document.getElementById('chartMarket'), {
+                type: 'bar',
+                data: {
+                    labels: ['Online TA', 'Offline TA', 'Groups', 'Direct', 'Corp'],
+                    datasets: [{ data: [47, 20, 17, 11, 5], backgroundColor: ['#3b82f6', '#60a5fa', '#93c5fd', '#bfdbfe', '#e0f2fe'], borderRadius: 2 }]
+                },
+                options: {
+                    indexAxis: 'y',
+                    scales: {
+                        x: { grid: { color: c.grid, borderDash: [2, 4] }, border: { display: false }, ticks: { color: c.text, callback: v => v+'%' } },
+                        y: { grid: { display: false }, border: { display: false }, ticks: { color: c.text } }
+                    }
+                }
+            });
+
+            // 5. Country (Bar)
+            charts.country = new Chart(document.getElementById('chartCountry'), {
+                type: 'bar',
+                data: {
+                    labels: ['PRT', 'GBR', 'FRA', 'ESP', 'DEU'],
+                    datasets: [{ data: [48590, 12129, 10415, 8568, 7287], backgroundColor: '#8b5cf6', borderRadius: 2 }]
+                },
+                options: { scales: commonScales() }
+            });
+
+            // 6. Customer Type (Doughnut)
+            charts.customer = new Chart(document.getElementById('chartCustomer'), {
+                type: 'doughnut',
+                data: {
+                    labels: ['Transient', 'Party', 'Contract', 'Group'],
+                    datasets: [{ data: [75, 21, 3, 1], backgroundColor: ['#3b82f6', '#8b5cf6', '#10b981', '#f59e0b'], borderWidth: 0, cutout: '70%' }]
+                },
+                options: {
+                    plugins: { legend: { display: true, position: 'right', labels: { color: c.text, boxWidth: 8, font: { size: 9 } } } }
+                }
+            });
+
+            // 7. Deposit Type (Stacked Bar)
+            charts.deposit = new Chart(document.getElementById('chartDeposit'), {
+                type: 'bar',
+                data: {
+                    labels: ['No Deposit', 'Non Refund', 'Refundable'],
+                    datasets: [
+                        { label: 'Bookings', data: [104641, 14587, 162], backgroundColor: ['#10b981', '#ef4444', '#3b82f6'], borderRadius: 2 }
+                    ]
+                },
+                options: {
+                     indexAxis: 'y',
+                     scales: {
+                        x: { grid: { color: c.grid, borderDash: [2, 4] }, border: { display: false }, ticks: { color: c.text } },
+                        y: { grid: { display: false }, border: { display: false }, ticks: { color: c.text } }
+                    }
+                }
+            });
+
+            // FIX: Initialize base data references after charts are built
+            Object.values(charts).forEach(chart => {
+                chart.baseData = chart.data.datasets.map(ds => [...ds.data]);
+            });
+        }
+
+        function updateChartColors() {
+            const c = getColors();
+            Object.values(charts).forEach(chart => {
+                // Update common scales if they exist
+                if (chart.options.scales?.x) {
+                    chart.options.scales.x.ticks.color = c.text;
+                    if(chart.options.scales.x.grid.color) chart.options.scales.x.grid.color = c.grid;
+                }
+                if (chart.options.scales?.y) {
+                    chart.options.scales.y.ticks.color = c.text;
+                    if(chart.options.scales.y.grid.color) chart.options.scales.y.grid.color = c.grid;
+                }
+                // Update legends
+                if (chart.options.plugins?.legend?.labels) {
+                    chart.options.plugins.legend.labels.color = c.text;
+                }
+                
+                // Update specific elements like previous year dash line
+                if (chart.config.type === 'line' && chart.data.datasets[1]) {
+                    chart.data.datasets[1].borderColor = c.lineBase;
+                }
+                
+                chart.update();
+            });
+        }
+
+        // === Interactivity & Simulation Logic ===
+        const filterTriggers = document.querySelectorAll('.filter-trigger');
+        const resetBtn = document.getElementById('resetFilters');
+        const loadingOverlay = document.getElementById('loadingOverlay');
+
+        // Base Data values for simulation
+        const baseKpi = { total: 119390, cancel: 37.0, rev: 12.4, adr: 101.8, lead: 104, stay: 3.4 };
+        
+        // Formatter functions
+        const fmt = {
+            num: v => Math.round(v).toLocaleString(),
+            pct: v => v.toFixed(1) + '%',
+            cur: v => '$' + v.toFixed(1) + (v > 10 ? 'M' : ''),
+            adr: v => '$' + v.toFixed(1),
+            day: v => Math.round(v) + 'd',
+            flt: v => v.toFixed(1) + 'n'
+        };
+
+        function animateValue(obj, start, end, duration, formatFn) {
+            let startTimestamp = null;
+            const step = (timestamp) => {
+                if (!startTimestamp) startTimestamp = timestamp;
+                const progress = Math.min((timestamp - startTimestamp) / duration, 1);
+                // Ease out quad
+                const easeOut = progress * (2 - progress);
+                const current = start + (end - start) * easeOut;
+                obj.innerHTML = formatFn(current);
+                if (progress < 1) window.requestAnimationFrame(step);
+            };
+            window.requestAnimationFrame(step);
+        }
+
+        function updateDashboardData() {
+            // Show loading
+            loadingOverlay.classList.add('active');
+            
+            setTimeout(() => {
+                // Calculate a mock factor based on selections to simulate real filtering
+                let factor = 1.0;
+                filterTriggers.forEach(f => {
+                    if (f.tagName === 'SELECT' && f.value !== 'all') factor *= (Math.random() * 0.3 + 0.4); // Random drop between 40-70% per filter
+                    if (f.id === 'timelineSlider') factor *= (f.value / 100);
+                });
+                factor = Math.max(0.05, factor); // Minimum 5% data remains
+                
+                // Update KPIs
+                const kpiEls = {
+                    total: document.querySelector('[data-kpi="total"]'),
+                    cancel: document.querySelector('[data-kpi="cancel"]'),
+                    rev: document.querySelector('[data-kpi="rev"]'),
+                    adr: document.querySelector('[data-kpi="adr"]'),
+                    lead: document.querySelector('[data-kpi="lead"]'),
+                    stay: document.querySelector('[data-kpi="stay"]')
+                };
+
+                // Add slight variance to averages, strict scale to totals
+                animateValue(kpiEls.total, parseInt(kpiEls.total.innerText.replace(/,/g,'')), baseKpi.total * factor, 800, fmt.num);
+                animateValue(kpiEls.cancel, parseFloat(kpiEls.cancel.innerText), baseKpi.cancel * (1 + (Math.random() * 0.2 - 0.1)), 800, fmt.pct);
+                animateValue(kpiEls.rev, parseFloat(kpiEls.rev.innerText.replace(/[$M]/g,'')), (baseKpi.rev * factor), 800, fmt.cur);
+                animateValue(kpiEls.adr, parseFloat(kpiEls.adr.innerText.replace('$','')), baseKpi.adr * (1 + (Math.random() * 0.1 - 0.05)), 800, fmt.adr);
+                animateValue(kpiEls.lead, parseFloat(kpiEls.lead.innerText), baseKpi.lead * (1 + (Math.random() * 0.2 - 0.1)), 800, fmt.day);
+                animateValue(kpiEls.stay, parseFloat(kpiEls.stay.innerText), baseKpi.stay * (1 + (Math.random() * 0.1 - 0.05)), 800, fmt.flt);
+
+                // Update Funnel
+                const total = baseKpi.total * factor;
+                const confirmed = total * (1 - (baseKpi.cancel/100 * (1 + Math.random()*0.1 - 0.05)));
+                const actual = confirmed * 0.98; // 2% no show mock
+                
+                document.querySelector('[data-kpi="funnel-1"]').innerText = fmt.num(total);
+                document.querySelector('[data-kpi="funnel-2"]').innerText = fmt.num(confirmed);
+                document.querySelector('[data-kpi="funnel-3"]').innerText = fmt.num(actual);
+                
+                document.getElementById('funnelBar2').style.width = `${(confirmed/total)*100}%`;
+                document.getElementById('funnelBar3').style.width = `${(actual/total)*100}%`;
+
+                // FIX: Recalculate based on baseData instead of incremental current state
+                Object.values(charts).forEach((chart) => {
+                    chart.data.datasets.forEach((ds, dsIndex) => {
+                        const baseValues = chart.baseData[dsIndex];
+
+                        // Keep percentages for doughnut/pie roughly similar but slightly varying
+                        if (chart.config.type === 'doughnut') {
+                             ds.data = baseValues.map(v => Math.max(1, v * factor + (Math.random() * 10 - 5)));
+                             // Normalize back to 100
+                             const newTotal = ds.data.reduce((a,b)=>a+b, 0);
+                             ds.data = ds.data.map(v => Math.round((v/newTotal)*100));
+                        } 
+                        // Scale absolute numbers for bars/lines
+                        else if (chart.config.type === 'line') {
+                             ds.data = baseValues.map(v => v * factor * (1 + Math.random() * 0.2 - 0.1));
+                        } else {
+                             ds.data = baseValues.map(v => Math.max(0, Math.round(v * factor * (1 + Math.random() * 0.1 - 0.05))));
+                        }
+                    });
+                    chart.update();
+                });
+
+                // Update Insights Text dynamically
+                const filterVals = Array.from(filterTriggers).filter(f => f.tagName === 'SELECT').map(f => f.options[f.selectedIndex].text);
+                const hasFilters = filterVals.some(v => !v.includes('All'));
+                
+                if (hasFilters) {
+                    document.getElementById('insight1').innerText = `Filtered view selected.`;
+                    document.getElementById('insight2').innerText = `Revenue adjusted by ~${Math.round((1-factor)*100)}%.`;
+                    document.getElementById('insight3').innerText = `Cancellation profile updated.`;
+                } else {
+                    document.getElementById('insight1').innerText = `Online TA drives 47% of volume.`;
+                    document.getElementById('insight2').innerText = `City Hotels face 41% cancel rate.`;
+                    document.getElementById('insight3').innerText = `Avg lead time peaks in August.`;
+                }
+
+                // Hide loading
+                loadingOverlay.classList.remove('active');
+            }, 400); // Simulated network delay
+        }
+
+        // Attach listeners
+        filterTriggers.forEach(f => f.addEventListener('change', updateDashboardData));
+        resetBtn.addEventListener('click', () => {
+            filterTriggers.forEach(f => {
+                if(f.tagName === 'SELECT') f.value = 'all';
+                if(f.type === 'range') f.value = 100;
+            });
+            updateDashboardData();
+        });
+
+        // Initialize
+        window.onload = () => {
+            initCharts();
+            // trigger initial animations
+            updateDashboardData();
+        };
+
+        // Resize observer to ensure charts stay within bounds and redraw correctly on window resize
+        window.addEventListener('resize', () => {
+            Object.values(charts).forEach(chart => chart.resize());
+        });
+    </script>
+</body>
+</html>
